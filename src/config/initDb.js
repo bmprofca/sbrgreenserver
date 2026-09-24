@@ -1,9 +1,8 @@
 const bcrypt = require("bcryptjs");
 const { query } = require("../config/db");
-const env = require("../config/env");
 
 const TABLE_SQL = [
-  `CREATE TABLE IF NOT EXISTS admins (
+  `CREATE TABLE IF NOT EXISTS admin (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
@@ -143,15 +142,28 @@ const TABLE_SQL = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 ];
 
+async function migrateAdminsTable() {
+  const tables = await query("SHOW TABLES LIKE 'admins'");
+  if (!tables.length) return;
+
+  const adminRows = await query("SELECT COUNT(*) AS count FROM admin");
+  if (Number(adminRows[0].count) === 0) {
+    await query(
+      `INSERT INTO admin (username, password_hash, created_at)
+       SELECT username, password_hash, created_at FROM admins`
+    );
+  }
+  await query("DROP TABLE admins");
+}
+
 async function ensureAdmin() {
-  const existing = await query("SELECT id FROM admins WHERE username = ? LIMIT 1", [
-    env.admin.username,
-  ]);
+  const existing = await query("SELECT id FROM admin LIMIT 1");
   if (existing.length) return;
 
-  const passwordHash = await bcrypt.hash(env.admin.password, 10);
-  await query("INSERT INTO admins (username, password_hash) VALUES (?, ?)", [
-    env.admin.username,
+  // Default login is stored only in the database (hashed), not in .env
+  const passwordHash = await bcrypt.hash("Admin@123", 10);
+  await query("INSERT INTO admin (username, password_hash) VALUES (?, ?)", [
+    "admin",
     passwordHash,
   ]);
 }
@@ -338,6 +350,7 @@ async function initDatabase() {
   for (const sql of TABLE_SQL) {
     await query(sql);
   }
+  await migrateAdminsTable();
   await ensureAdmin();
   await seedIfEmpty();
 }

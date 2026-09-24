@@ -10,7 +10,7 @@ const login = asyncHandler(async (req, res) => {
     return fail(res, 400, "Username and password are required");
   }
 
-  const rows = await query("SELECT * FROM admins WHERE username = ? LIMIT 1", [username]);
+  const rows = await query("SELECT * FROM admin WHERE username = ? LIMIT 1", [username]);
   if (!rows.length) {
     return fail(res, 401, "Invalid credentials");
   }
