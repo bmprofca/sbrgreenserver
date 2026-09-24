@@ -1,4 +1,3 @@
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { query } = require("../config/db");
 const env = require("../config/env");
@@ -16,8 +15,8 @@ const login = asyncHandler(async (req, res) => {
   }
 
   const admin = rows[0];
-  const match = await bcrypt.compare(password, admin.password_hash);
-  if (!match) {
+  const storedPassword = admin.password ?? admin.password_hash;
+  if (storedPassword !== password) {
     return fail(res, 401, "Invalid credentials");
   }
 

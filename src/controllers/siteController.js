@@ -18,24 +18,37 @@ function mapSettings(row) {
     aboutStory1: row.about_story_1,
     aboutStory2: row.about_story_2,
     careersIntro: row.careers_intro,
+    whatsappNumber: row.whatsapp_number || "",
     updatedAt: row.updated_at,
   };
 }
 
 const getPublicSiteData = asyncHandler(async (_req, res) => {
-  const [settingsRows, services, projects, gallery, testimonials, values, milestones, timeline, processSteps, careers] =
-    await Promise.all([
-      query("SELECT * FROM site_settings WHERE id = 1 LIMIT 1"),
-      query("SELECT * FROM services WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
-      query("SELECT * FROM projects WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
-      query("SELECT * FROM gallery WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
-      query("SELECT * FROM testimonials WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
-      query("SELECT * FROM company_values WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
-      query("SELECT * FROM milestones WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
-      query("SELECT * FROM timeline WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
-      query("SELECT * FROM process_steps WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
-      query("SELECT * FROM careers WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
-    ]);
+  const [
+    settingsRows,
+    services,
+    projects,
+    gallery,
+    testimonials,
+    values,
+    milestones,
+    timeline,
+    processSteps,
+    careers,
+    founders,
+  ] = await Promise.all([
+    query("SELECT * FROM site_settings WHERE id = 1 LIMIT 1"),
+    query("SELECT * FROM services WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+    query("SELECT * FROM projects WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+    query("SELECT * FROM gallery WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+    query("SELECT * FROM testimonials WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+    query("SELECT * FROM company_values WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+    query("SELECT * FROM milestones WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+    query("SELECT * FROM timeline WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+    query("SELECT * FROM process_steps WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+    query("SELECT * FROM careers WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+    query("SELECT * FROM founders WHERE is_active = 1 ORDER BY sort_order ASC, id ASC"),
+  ]);
 
   return ok(res, {
     settings: mapSettings(settingsRows[0]),
@@ -106,6 +119,15 @@ const getPublicSiteData = asyncHandler(async (_req, res) => {
       summary: c.summary,
       sortOrder: c.sort_order,
     })),
+    founders: founders.map((f) => ({
+      id: f.id,
+      name: f.name,
+      designation: f.designation,
+      image: f.image,
+      bio: f.bio,
+      quote: f.quote,
+      sortOrder: f.sort_order,
+    })),
   });
 });
 
@@ -124,7 +146,8 @@ const updateSettings = asyncHandler(async (req, res) => {
   await query(
     `UPDATE site_settings SET
       company_name = ?, short_name = ?, tagline = ?, phone = ?, email = ?, address = ?, hours = ?,
-      hero_image = ?, about_image = ?, cta_image = ?, about_story_1 = ?, about_story_2 = ?, careers_intro = ?
+      hero_image = ?, about_image = ?, cta_image = ?, about_story_1 = ?, about_story_2 = ?, careers_intro = ?,
+      whatsapp_number = ?
      WHERE id = 1`,
     [
       body.companyName,
@@ -140,6 +163,7 @@ const updateSettings = asyncHandler(async (req, res) => {
       body.aboutStory1 || null,
       body.aboutStory2 || null,
       body.careersIntro || null,
+      body.whatsappNumber || null,
     ]
   );
 

@@ -52,5 +52,6 @@ mountCrud(router, "/admin/milestones", entities.milestones);
 mountCrud(router, "/admin/timeline", entities.timeline);
 mountCrud(router, "/admin/process-steps", entities.processSteps);
 mountCrud(router, "/admin/careers", entities.careers);
+mountCrud(router, "/admin/founders", entities.founders);
 
 module.exports = router;

@@ -21,9 +21,9 @@ API base URL: `http://localhost:5000/api`
 On first startup, if the `admin` table is empty, a default user is created in the database:
 
 - Username: `admin`
-- Password: `Admin@123`
+- Password: `Admin@123` (stored as plain text in the `password` column)
 
-Credentials are **not** stored in `.env`. Change the password in the database after first login.
+Credentials are **not** stored in `.env`. Change the password directly in the database when needed.
 
 ## Key endpoints
 

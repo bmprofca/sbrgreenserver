@@ -299,6 +299,58 @@ const careers = createCrudController({
   }),
 });
 
+const founders = createCrudController({
+  table: "founders",
+  mapRow: (row) => ({
+    id: row.id,
+    name: row.name,
+    designation: row.designation,
+    image: row.image,
+    bio: row.bio,
+    quote: row.quote || "",
+    sortOrder: row.sort_order,
+    isActive: Boolean(row.is_active),
+  }),
+  validateCreate: (body) => {
+    if (!body.name || !body.designation || !body.image || !body.bio) {
+      return "name, designation, image, and bio are required";
+    }
+    return null;
+  },
+  toInsert: (body) => ({
+    columns: ["name", "designation", "image", "bio", "quote", "sort_order", "is_active"],
+    values: [
+      body.name,
+      body.designation,
+      body.image,
+      body.bio,
+      body.quote || null,
+      Number(body.sortOrder || 0),
+      body.isActive === false ? 0 : 1,
+    ],
+  }),
+  toUpdate: (body) => ({
+    assignments: [
+      "name = ?",
+      "designation = ?",
+      "image = ?",
+      "bio = ?",
+      "quote = ?",
+      "sort_order = ?",
+      "is_active = ?",
+    ],
+    values: [
+      body.name,
+      body.designation,
+      body.image,
+      body.bio,
+      body.quote || null,
+      Number(body.sortOrder || 0),
+      body.isActive === false ? 0 : 1,
+    ],
+  }),
+});
+
 module.exports = {
   services,
   projects,
@@ -309,4 +361,5 @@ module.exports = {
   timeline,
   processSteps,
   careers,
+  founders,
 };

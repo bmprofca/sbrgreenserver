@@ -1,11 +1,10 @@
-const bcrypt = require("bcryptjs");
 const { query } = require("../config/db");
 
 const TABLE_SQL = [
   `CREATE TABLE IF NOT EXISTS admin (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
+    password VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
@@ -24,6 +23,20 @@ const TABLE_SQL = [
     about_story_1 TEXT,
     about_story_2 TEXT,
     careers_intro TEXT,
+    whatsapp_number VARCHAR(50) DEFAULT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+  `CREATE TABLE IF NOT EXISTS founders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    designation VARCHAR(200) NOT NULL,
+    image TEXT NOT NULL,
+    bio TEXT NOT NULL,
+    quote TEXT,
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
@@ -144,28 +157,61 @@ const TABLE_SQL = [
 
 async function migrateAdminsTable() {
   const tables = await query("SHOW TABLES LIKE 'admins'");
-  if (!tables.length) return;
+  if (tables.length) {
+    const adminRows = await query("SELECT COUNT(*) AS count FROM admin");
+    if (Number(adminRows[0].count) === 0) {
+      const oldColumns = await query("SHOW COLUMNS FROM admins");
+      const hasPlain = oldColumns.some((col) => col.Field === "password");
+      const passwordCol = hasPlain ? "password" : "password_hash";
+      await query(
+        `INSERT INTO admin (username, password, created_at)
+         SELECT username, ${passwordCol}, created_at FROM admins`
+      );
+    }
+    await query("DROP TABLE admins");
+  }
 
-  const adminRows = await query("SELECT COUNT(*) AS count FROM admin");
-  if (Number(adminRows[0].count) === 0) {
+  // Rename legacy password_hash column to password if needed
+  const columns = await query("SHOW COLUMNS FROM admin");
+  const hasHash = columns.some((col) => col.Field === "password_hash");
+  const hasPassword = columns.some((col) => col.Field === "password");
+
+  if (hasHash && !hasPassword) {
+    await query("ALTER TABLE admin CHANGE password_hash password VARCHAR(255) NOT NULL");
+  } else if (hasHash && hasPassword) {
+    await query("UPDATE admin SET password = password_hash WHERE password IS NULL OR password = ''");
+    await query("ALTER TABLE admin DROP COLUMN password_hash");
+  }
+}
+
+async function migrateSiteSettingsColumns() {
+  const columns = await query("SHOW COLUMNS FROM site_settings");
+  const names = columns.map((col) => col.Field);
+  if (!names.includes("whatsapp_number")) {
     await query(
-      `INSERT INTO admin (username, password_hash, created_at)
-       SELECT username, password_hash, created_at FROM admins`
+      "ALTER TABLE site_settings ADD COLUMN whatsapp_number VARCHAR(50) DEFAULT NULL AFTER careers_intro"
     );
   }
-  await query("DROP TABLE admins");
+  await query(
+    "UPDATE site_settings SET whatsapp_number = COALESCE(NULLIF(whatsapp_number, ''), '919876543210') WHERE id = 1"
+  );
 }
 
 async function ensureAdmin() {
-  const existing = await query("SELECT id FROM admin LIMIT 1");
-  if (existing.length) return;
+  const existing = await query("SELECT id, password FROM admin LIMIT 1");
+  if (!existing.length) {
+    await query("INSERT INTO admin (username, password) VALUES (?, ?)", [
+      "admin",
+      "Admin@123",
+    ]);
+    return;
+  }
 
-  // Default login is stored only in the database (hashed), not in .env
-  const passwordHash = await bcrypt.hash("Admin@123", 10);
-  await query("INSERT INTO admin (username, password_hash) VALUES (?, ?)", [
-    "admin",
-    passwordHash,
-  ]);
+  // Convert previously hashed passwords to the default plain-text password
+  const current = String(existing[0].password || "");
+  if (current.startsWith("$2a$") || current.startsWith("$2b$") || current.startsWith("$2y$")) {
+    await query("UPDATE admin SET password = ? WHERE id = ?", ["Admin@123", existing[0].id]);
+  }
 }
 
 async function seedIfEmpty() {
@@ -174,8 +220,8 @@ async function seedIfEmpty() {
     await query(
       `INSERT INTO site_settings (
         id, company_name, short_name, tagline, phone, email, address, hours,
-        hero_image, about_image, cta_image, about_story_1, about_story_2, careers_intro
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        hero_image, about_image, cta_image, about_story_1, about_story_2, careers_intro, whatsapp_number
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         "SBRGREEN CONSTRUCTION PRIVATE LIMITED",
         "SBRGREEN",
@@ -190,19 +236,35 @@ async function seedIfEmpty() {
         "SBRGREEN CONSTRUCTION PRIVATE LIMITED is a full-service construction company serving residential, commercial, industrial, and civic clients. We combine practical engineering, skilled site teams, and clear project communication to turn plans into finished structures.",
         "Our name reflects our ambition: to build well, and to build with greater care for the environments our projects inhabit. From scheduling and procurement to finishing and handover, we treat every assignment as a long-term commitment to quality.",
         "You will work on meaningful projects with clear leadership, fair processes, and a genuine focus on safety. We invest in people who take ownership — on drawings, on site, and with clients.",
+        "919876543210",
       ]
+    );
+  } else {
+    // Ensure WhatsApp number exists on older seeded rows
+    await query(
+      "UPDATE site_settings SET whatsapp_number = COALESCE(NULLIF(whatsapp_number, ''), ?) WHERE id = 1",
+      ["919876543210"]
     );
   }
 
   const serviceCount = await query("SELECT COUNT(*) AS count FROM services");
   if (Number(serviceCount[0].count) === 0) {
     const services = [
-      ["residential", "Residential Construction", "Custom homes, apartments, and gated communities built with precision and lasting quality.", "From foundation to finishing, we deliver residential projects that balance comfort, durability, and modern living standards.", 1],
-      ["commercial", "Commercial Buildings", "Offices, retail spaces, and mixed-use developments designed for performance and presence.", "We manage commercial builds with clear timelines, safety compliance, and finishes that reflect your brand.", 2],
-      ["infrastructure", "Infrastructure Works", "Roads, drainage, utility corridors, and civic structures that serve communities for decades.", "Our infrastructure teams bring engineering rigor and site discipline to public and private civil works.", 3],
-      ["renovation", "Renovation & Retrofitting", "Structural upgrades, modernizations, and adaptive reuse of existing properties.", "We revitalize aging structures with careful planning, minimal disruption, and updated building systems.", 4],
-      ["green", "Green & Sustainable Builds", "Energy-efficient design, eco materials, and practices that reduce environmental impact.", "As SBRGREEN, we prioritize responsible construction — from waste control to efficient envelopes and landscaping.", 5],
-      ["pmc", "Project Management", "End-to-end planning, scheduling, quality control, and stakeholder coordination.", "Transparent reporting, milestone tracking, and on-site leadership keep your project on course.", 6],
+      ["structural-building", "Structural Building Works", "Complete structural building construction for durable, code-compliant structures.", "We execute structural building works with accurate detailing, quality materials, and strict site supervision from framing to structural completion.", 1],
+      ["foundation-work", "Foundation Work", "Strong, engineered foundations that support safe and long-lasting construction.", "Our foundation services cover excavation, footing, raft, and related substructure works with careful soil handling and quality concrete practices.", 2],
+      ["site-development", "Site Development", "End-to-end site preparation and development for ready-to-build project grounds.", "From leveling and grading to access roads and utility-ready plots, we prepare sites for smooth and efficient construction progress.", 3],
+      ["piling-work", "Piling Work", "Reliable piling solutions for deep foundations and high-load structures.", "We deliver piling work with controlled installation methods, alignment checks, and load-ready foundations for industrial and commercial projects.", 4],
+      ["industrial-projects", "Industrial Projects", "Industrial sheds, plants, and utility structures built for performance and scale.", "Our industrial project teams focus on functional layouts, strong structures, and efficient execution for manufacturing and warehouse facilities.", 5],
+      ["bridge-structural", "Bridge Structural Works", "Structural construction support for bridges and related civil structures.", "We undertake bridge structural works with disciplined engineering coordination, formwork quality, and durable concrete and steel practices.", 6],
+      ["road-design-construction", "Road Design & Construction", "Practical road design and construction for internal and connecting road networks.", "We plan and build roads with proper alignment, drainage consideration, compaction standards, and lasting pavement quality.", 7],
+      ["fabrication-works", "Fabrication Works", "Steel and metal fabrication for structural and site construction needs.", "Our fabrication works include cutting, assembly, and installation support for structural steel, frames, and custom site components.", 8],
+      ["interior-works", "Interior Works", "Interior fit-outs and finishing that complete functional, presentable spaces.", "We deliver interior works covering partitions, finishes, and related installations with clean workmanship and coordinated site delivery.", 9],
+      ["fencing-boundary", "Fencing & Boundary Works", "Secure fencing and boundary solutions for project sites and properties.", "We install fencing and boundary systems that improve site security, define property limits, and withstand outdoor conditions.", 10],
+      ["boundary-wall", "Boundary Wall Construction", "Strong boundary walls designed for security, durability, and neat finishing.", "Our boundary wall construction covers layout marking, masonry or RCC options, and finishing suitable for residential and commercial sites.", 11],
+      ["rcc-boundary", "RCC Boundary Work", "Reinforced cement concrete boundary structures for long-term strength.", "We execute RCC boundary work with proper reinforcement, formwork, and curing practices for durable perimeter structures.", 12],
+      ["rcc-drain", "RCC Drain Work", "RCC drain construction for effective site and roadside water management.", "Our RCC drain works help control stormwater flow with accurate levels, strong concrete sections, and clean finishing.", 13],
+      ["commercial-building", "Commercial Building Projects", "Offices, retail, and commercial buildings delivered with professional project control.", "We build commercial projects with attention to structure, schedule, safety, and finishes that support business-ready spaces.", 14],
+      ["general-construction", "General Construction Services", "Any construction-related work handled with skilled teams and clear delivery.", "From specialized civil packages to complete project support, SBRGREEN undertakes construction-related works tailored to your site requirements.", 15],
     ];
     for (const row of services) {
       await query(
@@ -344,6 +406,21 @@ async function seedIfEmpty() {
       );
     }
   }
+
+  const foundersCount = await query("SELECT COUNT(*) AS count FROM founders");
+  if (Number(foundersCount[0].count) === 0) {
+    await query(
+      `INSERT INTO founders (name, designation, image, bio, quote, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        "Rajesh Kumar Sharma",
+        "Founder & Managing Director",
+        "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=800&q=80",
+        "With decades of hands-on experience in civil and structural construction, Rajesh founded SBRGREEN to deliver reliable projects with a stronger focus on quality, safety, and greener building practices.",
+        "Every structure we build should stand strong — and leave a lighter footprint for tomorrow.",
+        1,
+      ]
+    );
+  }
 }
 
 async function initDatabase() {
@@ -351,6 +428,7 @@ async function initDatabase() {
     await query(sql);
   }
   await migrateAdminsTable();
+  await migrateSiteSettingsColumns();
   await ensureAdmin();
   await seedIfEmpty();
 }
